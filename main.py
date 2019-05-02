@@ -118,6 +118,11 @@ class Router:
 
         existing_entry = self.get_entry(entry.destination)
         if existing_entry:
+            if existing_entry.next_router == source:
+                # Believe next router if you depend on it
+                existing_entry.has_changed = existing_entry.hops != hops
+                existing_entry.hops = hops
+
             if hops < existing_entry.hops:
                 existing_entry.next_router = source
                 existing_entry.hops = hops
@@ -125,15 +130,23 @@ class Router:
                 logger.info(
                     f"[Router {self.name}] Updated entry of {self.name} to {entry.destination}, found faster route: {hops} hops")
 
-            # If same route/new route
-            if existing_entry.next_router == source:
-                existing_entry.timeout = RIP_TIMEOUT
-                existing_entry.garbage_timeout = RIP_GARBAGE_COLLECTION
-                logger.debug(f"[Router {self.name}] Reset timers of entry to {existing_entry.destination}")
+            if existing_entry.next_router == source and existing_entry.hops == hops:
+                if existing_entry.timeout <= 0:
+                    logger.debug(f"[Router {self.name}] Ignoring update on {entry.destination}, entry has timed out")
+                else:
+                    existing_entry.timeout = RIP_TIMEOUT
+                    existing_entry.garbage_timeout = RIP_GARBAGE_COLLECTION
+                    logger.debug(f"[Router {self.name}] Reset timers of entry to destination {existing_entry.destination}")
 
         else:
+            if hops == RIP_INF:
+                # Ignore, it's unreachable...
+                logger.debug(
+                    f"[Router {self.name}] Ignoring new entry to {entry.destination}, it's unreachable")
+                return
+
             self.routing_table.append(TableEntry(entry.destination, hops, source, True))
-            logger.info(f"[Router {self.name}] Added new route to {self.name}: {entry.destination} ({hops} hops)")
+            logger.info(f"[Router {self.name}] Added new route to {entry.destination}: ({hops} hops)")
 
     def get_entry(self, destination: str):
         for entry in self.routing_table:
@@ -246,7 +259,6 @@ if __name__ == '__main__':
         tick <seconds: int> -- simulate <seconds> ticks, one second is one tick
         delay <seconds: float> -- delay between ticks
 
-        # TODO: 
         send <from> <to> <delay> -- simulate sending of a packet, packet travels with a speed of <delay>
 
         print -- print network routers and their tables
@@ -265,16 +277,19 @@ if __name__ == '__main__':
     network.add_router("d")
     network.add_router("e")
     network.add_route("a", "b")
-    network.add_route("b", "c")
-    network.add_route("c", "d")
-    network.add_route("d", "e")
-
+    network.add_route("a", "e")
+    network.add_route("b", "e")
     network.add_route("a", "c")
+    network.add_route("b", "d")
+    network.add_route("c", "d")
+    # network.add_route("d", "e")
+    #
+    # network.add_route("a", "c")
 
     # for i in range(0):
     #     network.tick()
 
-    network.add_route("a", "d")
+    # network.add_route("a", "d")
 
     tick_delay = 0
     while True:
